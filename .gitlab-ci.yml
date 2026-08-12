@@ -43,8 +43,10 @@ lint:
     # every binary in the repository on each run.
     GIT_LFS_SKIP_SMUDGE: "1"
     TYPOS_VERSION: "1.29.4"
-    # Where the checks live, relative to the project root. Change if you vendored them elsewhere.
-    UNITY_CI_CHECKS: "ci/checks"
+    # Where the checks live, relative to the project root. Leave blank to auto-detect the usual
+    # layouts: copied to ci/checks, added as a submodule at ci/unity-ci/checks, or this repository
+    # itself. Set it only if you put them somewhere unusual.
+    UNITY_CI_CHECKS: ""
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq --no-install-recommends git git-lfs curl ca-certificates
@@ -55,6 +57,19 @@ lint:
         | tar -xz ./typos
   script:
     - |
+      CHECKS=""
+      for candidate in "$UNITY_CI_CHECKS" ci/checks ci/unity-ci/checks checks; do
+        if [ -n "$candidate" ] && [ -f "$candidate/check_naming.py" ]; then
+          CHECKS="$candidate"
+          echo "Using checks in '$CHECKS'"
+          break
+        fi
+      done
+      if [ -z "$CHECKS" ]; then
+        echo "Could not find the unity-ci checks. Set UNITY_CI_CHECKS to their directory." >&2
+        exit 1
+      fi
+
       overall_status=0
 
       run_check() {
@@ -67,10 +82,10 @@ lint:
         fi
       }
 
-      run_check "core purity"         python "$UNITY_CI_CHECKS/check_core_purity.py"
-      run_check "naming conventions"  python "$UNITY_CI_CHECKS/check_naming.py"
-      run_check "unity asset hygiene" python "$UNITY_CI_CHECKS/check_unity_assets.py"
-      run_check "lfs hygiene"         python "$UNITY_CI_CHECKS/check_lfs.py"
+      run_check "core purity"         python "$CHECKS/check_core_purity.py"
+      run_check "naming conventions"  python "$CHECKS/check_naming.py"
+      run_check "unity asset hygiene" python "$CHECKS/check_unity_assets.py"
+      run_check "lfs hygiene"         python "$CHECKS/check_lfs.py"
       run_check "typos"               ./typos
 
       echo ""

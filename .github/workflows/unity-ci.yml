@@ -19,8 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Where the checks live, relative to the repository root. Change if you vendored them elsewhere.
-  UNITY_CI_CHECKS: ci/checks
+  # Where the checks live, relative to the repository root. Leave blank to auto-detect the usual
+  # layouts: copied to ci/checks, added as a submodule at ci/unity-ci/checks, or this repository
+  # itself. Set it only if you put them somewhere unusual.
+  UNITY_CI_CHECKS: ""
 
 jobs:
   lint:
@@ -52,8 +54,23 @@ jobs:
             "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar -xz ./typos
 
+      - name: Locate the checks
+        id: checks
+        run: |
+          for candidate in "$UNITY_CI_CHECKS" ci/checks ci/unity-ci/checks checks; do
+            if [ -n "$candidate" ] && [ -f "$candidate/check_naming.py" ]; then
+              echo "dir=$candidate" >> "$GITHUB_OUTPUT"
+              echo "Using checks in '$candidate'"
+              exit 0
+            fi
+          done
+          echo "Could not find the unity-ci checks. Set UNITY_CI_CHECKS to their directory." >&2
+          exit 1
+
       # One step, so every check reports before the job fails and one push surfaces every problem.
       - name: Run checks
+        env:
+          CHECKS: ${{ steps.checks.outputs.dir }}
         run: |
           overall_status=0
 
@@ -67,10 +84,10 @@ jobs:
             fi
           }
 
-          run_check "core purity"         python "$UNITY_CI_CHECKS/check_core_purity.py"
-          run_check "naming conventions"  python "$UNITY_CI_CHECKS/check_naming.py"
-          run_check "unity asset hygiene" python "$UNITY_CI_CHECKS/check_unity_assets.py"
-          run_check "lfs hygiene"         python "$UNITY_CI_CHECKS/check_lfs.py"
+          run_check "core purity"         python "$CHECKS/check_core_purity.py"
+          run_check "naming conventions"  python "$CHECKS/check_naming.py"
+          run_check "unity asset hygiene" python "$CHECKS/check_unity_assets.py"
+          run_check "lfs hygiene"         python "$CHECKS/check_lfs.py"
           run_check "typos"               ./typos
 
           echo ""
