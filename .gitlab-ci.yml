@@ -1,0 +1,119 @@
+# unity-ci — GitLab CI
+#
+# Drop this into a Unity project, or `include:` it from this repository:
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/hamibahadori/unity-ci/main/.gitlab-ci.yml'
+#
+# Two stages, cheapest first. Neither needs a Unity install, so this works on any runner from the
+# first commit with no setup beyond copying this file. Add an editor-based job later for the parts
+# that genuinely need one — the two complement each other. See README.md.
+#
+# Merge-request-only by default, because GitLab.com's free tier has a limited monthly compute
+# allowance and review time is where checks earn their keep. Delete the workflow block to run on
+# every push.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+stages:
+  - lint
+  - test
+
+default:
+  # A new push to the same MR supersedes the running pipeline. Needs
+  # Settings > CI/CD > General pipelines > "Auto-cancel redundant pipelines" enabled to do anything.
+  interruptible: true
+
+# ---------------------------------------------------------------------------------------------
+# Lint — no Unity install needed, well under a minute.
+#
+# ONE job rather than five on purpose. Measured on a real project: the five checks take 1.7s
+# combined, while each *job* pays ~11s of fixed overhead (image pull, prepare, clone, cleanup) plus
+# ~7s of apt. Splitting them costs roughly 4x the compute for a prettier pipeline graph. The job
+# runs every check before failing, and each labels itself, so no diagnostic information is lost.
+# ---------------------------------------------------------------------------------------------
+
+lint:
+  stage: lint
+  image: python:3.13-slim
+  variables:
+    # These checks read git metadata, never LFS content. Skipping the smudge avoids downloading
+    # every binary in the repository on each run.
+    GIT_LFS_SKIP_SMUDGE: "1"
+    TYPOS_VERSION: "1.29.4"
+    # Where the checks live, relative to the project root. Change if you vendored them elsewhere.
+    UNITY_CI_CHECKS: "ci/checks"
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq --no-install-recommends git git-lfs curl ca-certificates
+    - git lfs install --skip-smudge
+    - |
+      curl -sSfL \
+        "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+        | tar -xz ./typos
+  script:
+    - |
+      overall_status=0
+
+      run_check() {
+        label="$1"
+        shift
+        echo ""
+        echo "=== ${label} ==================================================="
+        if ! "$@"; then
+          overall_status=1
+        fi
+      }
+
+      run_check "core purity"         python "$UNITY_CI_CHECKS/check_core_purity.py"
+      run_check "naming conventions"  python "$UNITY_CI_CHECKS/check_naming.py"
+      run_check "unity asset hygiene" python "$UNITY_CI_CHECKS/check_unity_assets.py"
+      run_check "lfs hygiene"         python "$UNITY_CI_CHECKS/check_lfs.py"
+      run_check "typos"               ./typos
+
+      echo ""
+      exit $overall_status
+
+# ---------------------------------------------------------------------------------------------
+# Test — the engine-free assemblies, on a stock .NET image.
+#
+# Requires a .csproj that compiles your Unity-free package outside Unity. See README.md; the
+# build doubles as the guard that keeps the package engine-free, because the moment it references
+# UnityEngine the types stop resolving.
+#
+# Delete this job if your project has no engine-free package yet.
+# ---------------------------------------------------------------------------------------------
+
+core-tests:
+  stage: test
+  image: mcr.microsoft.com/dotnet/sdk:9.0
+  rules:
+    # Skips itself until an engine-free test project exists, so this file is harmless to copy in
+    # before you have one.
+    - exists:
+        - "dotnet/**/*.Tests.csproj"
+  variables:
+    # Point this at your test project.
+    TEST_PROJECT: "dotnet/YourGame.Core.Tests/YourGame.Core.Tests.csproj"
+    # Restore into the workspace so the cache below can keep the packages.
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget"
+    DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    DOTNET_NOLOGO: "1"
+    # The rules engine needs no art, audio or fonts.
+    GIT_LFS_SKIP_SMUDGE: "1"
+  cache:
+    key:
+      files:
+        - $TEST_PROJECT
+    paths:
+      - .nuget/
+  script:
+    - dotnet test "$TEST_PROJECT" --logger "junit;LogFilePath=$CI_PROJECT_DIR/core-tests.xml"
+  artifacts:
+    when: always
+    expire_in: 1 week
+    reports:
+      # Puts failing tests on the merge request itself, not just in the job log.
+      junit: core-tests.xml

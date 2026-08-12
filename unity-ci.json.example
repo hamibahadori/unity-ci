@@ -1,0 +1,26 @@
+{
+  "//": "Optional. Copy to unity-ci.json at your Unity project root ONLY if the defaults are wrong.",
+  "//core_folders": [
+    "Folders whose C# must not reference Unity.",
+    "Omit this entirely and the checks derive it from your .asmdef files: every assembly with",
+    "\"noEngineReferences\": true, plus its .Tests sibling. That is usually what you want, because",
+    "it keeps the rule and the project's own declaration from drifting apart.",
+    "Set it explicitly only if you cannot mark the asmdef, e.g. mid-migration."
+  ],
+  "core_folders": ["Assets/Scripts/Core", "Assets/Tests/Core"],
+
+  "//source_roots": "Where the naming check looks for C#.",
+  "source_roots": ["Assets/Scripts", "Assets/Tests"],
+
+  "//asset_root": "Root of Unity-managed assets, for the .meta pairing check.",
+  "asset_root": "Assets",
+
+  "//large_file_warning_bytes": "Warn about non-LFS files bigger than this. 1 MiB by default.",
+  "large_file_warning_bytes": 1048576,
+
+  "//exclude": "Path prefixes skipped by every check - vendored or third-party code you did not write.",
+  "exclude": [
+    "Assets/TextMesh Pro/",
+    "Assets/Plugins/"
+  ]
+}

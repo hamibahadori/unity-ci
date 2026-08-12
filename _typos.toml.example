@@ -1,0 +1,36 @@
+# Configuration for crate-ci/typos. Copy to _typos.toml at your Unity project root.
+#
+# Scope is deliberately narrow: hand-written sources and documentation. Unity's serialized assets
+# are full of GUIDs and generated identifiers that look like misspellings to any spell checker, and
+# vendored folders are not yours to correct.
+
+[files]
+extend-exclude = [
+    "Library/",
+    "Temp/",
+    "Logs/",
+    "Builds/",
+    "obj/",
+    "UserSettings/",
+    "Packages/packages-lock.json",
+    # Serialized Unity data — GUIDs, fileIDs, generated names.
+    "*.meta",
+    "*.asset",
+    "*.unity",
+    "*.prefab",
+    "*.inputactions",
+    "*.mat",
+    "*.preset",
+    # Third-party, not yours to fix.
+    "Assets/TextMesh Pro/",
+    "Assets/Plugins/",
+    ".gitattributes",
+]
+
+[default.extend-words]
+# Domain and API vocabulary that is spelled correctly.
+asmdef = "asmdef"
+asmref = "asmref"
+uxml = "uxml"
+uss = "uss"
+tss = "tss"

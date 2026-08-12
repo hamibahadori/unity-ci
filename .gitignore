@@ -1,0 +1,30 @@
+# Python bytecode from the check scripts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments. Most tools write a self-ignoring .gitignore inside the venv, but that is a
+# property of the tool rather than of this repository — so do not rely on it.
+.venv/
+venv/
+env/
+
+# Local test output
+core-tests.xml
+*.trx
+.nuget/
+
+# The typos binary, if downloaded for a local run
+/typos
+/typos.exe
+
+# IDE
+.idea/
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db

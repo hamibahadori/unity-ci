@@ -1,0 +1,113 @@
+# unity-ci — GitHub Actions
+#
+# The same checks as .gitlab-ci.yml, for projects hosted on GitHub. Neither needs Unity, a licence,
+# or account credentials. See README.md.
+#
+# Pull-request-only by default, matching the GitLab version. Add `push:` if you want it on every
+# commit — on GitHub's free tier public repositories have unlimited minutes, so that is cheaper
+# here than it is on GitLab.
+
+name: unity-ci
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push to the same PR supersedes the running workflow.
+  group: unity-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Where the checks live, relative to the repository root. Change if you vendored them elsewhere.
+  UNITY_CI_CHECKS: ci/checks
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # These checks read git metadata, never LFS content — do not pull every binary.
+          lfs: false
+          # check_lfs.py and check_unity_assets.py inspect the committed tree, so a shallow clone
+          # of the tip is enough, but the default depth of 1 is fine only because they use HEAD.
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install git-lfs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends git-lfs
+          git lfs install --skip-smudge
+
+      - name: Install typos
+        env:
+          TYPOS_VERSION: 1.29.4
+        run: |
+          curl -sSfL \
+            "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz ./typos
+
+      # One step, so every check reports before the job fails and one push surfaces every problem.
+      - name: Run checks
+        run: |
+          overall_status=0
+
+          run_check() {
+            label="$1"
+            shift
+            echo ""
+            echo "=== ${label} ==================================================="
+            if ! "$@"; then
+              overall_status=1
+            fi
+          }
+
+          run_check "core purity"         python "$UNITY_CI_CHECKS/check_core_purity.py"
+          run_check "naming conventions"  python "$UNITY_CI_CHECKS/check_naming.py"
+          run_check "unity asset hygiene" python "$UNITY_CI_CHECKS/check_unity_assets.py"
+          run_check "lfs hygiene"         python "$UNITY_CI_CHECKS/check_lfs.py"
+          run_check "typos"               ./typos
+
+          echo ""
+          exit $overall_status
+
+  # Skips itself until an engine-free test project exists, so this file is harmless to copy in
+  # before you have one — and harmless in this repository, which has no Unity project of its own.
+  core-tests:
+    runs-on: ubuntu-latest
+    if: hashFiles('dotnet/**/*.Tests.csproj') != ''
+    env:
+      # Point this at your test project.
+      TEST_PROJECT: dotnet/YourGame.Core.Tests/YourGame.Core.Tests.csproj
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles(env.TEST_PROJECT) }}
+          restore-keys: nuget-
+
+      - name: Test
+        run: dotnet test "$TEST_PROJECT" --logger "trx;LogFileName=core-tests.trx"
+
+      - name: Publish results
+        # Runs even when tests fail — that is when the report matters most.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-results
+          path: '**/core-tests.trx'
+          retention-days: 7
