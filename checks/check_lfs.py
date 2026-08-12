@@ -31,6 +31,12 @@ def run_git(root, arguments, **kwargs):
                           capture_output=True, text=True, **kwargs)
 
 
+# A gitlink — a submodule pointer. Its "object" is a commit in the *submodule's* repository, which
+# does not exist here, so asking this repository for its size is meaningless. Consuming unity-ci as
+# a submodule is a supported layout, so this is a normal thing to encounter, not an error.
+GITLINK_MODE = "160000"
+
+
 def stored_blob_sizes(root):
     """Path -> the size git has stored for it in the index. An LFS pointer is ~130 bytes."""
     listing = run_git(root, ["ls-files", "-s", "-z"])
@@ -41,7 +47,7 @@ def stored_blob_sizes(root):
         # "<mode> <object> <stage>\t<path>"
         metadata, _, path = entry.partition("\t")
         fields = metadata.split()
-        if len(fields) >= 2:
+        if len(fields) >= 2 and fields[0] != GITLINK_MODE:
             entries.append((fields[1], path))
 
     if not entries:
@@ -49,8 +55,15 @@ def stored_blob_sizes(root):
 
     query = "\n".join(object_id for object_id, _path in entries) + "\n"
     measured = run_git(root, ["cat-file", "--batch-check=%(objectsize)"], input=query)
-    sizes = measured.stdout.split()
-    return {path: int(size) for (_object_id, path), size in zip(entries, sizes)}
+
+    # One line per query, but an unreadable object answers "<oid> missing" instead of a size.
+    # Parsing positionally rather than by line would silently misalign every entry after it.
+    sizes = {}
+    for (object_id, path), line in zip(entries, measured.stdout.splitlines()):
+        size = line.strip()
+        if size.isdigit():
+            sizes[path] = int(size)
+    return sizes
 
 
 def paths_matching_lfs_attribute(root, paths):
