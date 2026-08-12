@@ -188,15 +188,46 @@ be hardest to spot by playing the game.
 
 ### Install
 
-Copy `checks/` into your Unity project (commonly `ci/checks/`), or add this repository as a
-submodule:
+**As a submodule** — updates are a deliberate `git checkout` of a newer tag rather than a surprise:
 
 ```bash
 git submodule add https://github.com/hamibahadori/unity-ci.git ci/unity-ci
+cd ci/unity-ci && git checkout v1.0.0 && cd -
+git commit -am "Add unity-ci at v1.0.0"
 ```
 
-Then copy the pipeline file you need — `.gitlab-ci.yml` or `.github/workflows/unity-ci.yml` — to
-your project root and set `UNITY_CI_CHECKS` to wherever the checks ended up.
+**Pin to a tag rather than tracking `main`.** A change here should never break your pipeline
+without you choosing it.
+
+**Or copy** `checks/` into your project (commonly `ci/checks/`) if you would rather not carry a
+submodule. Simpler to reason about; you re-copy to update.
+
+Either way, copy the pipeline file you need — `.gitlab-ci.yml` or
+`.github/workflows/unity-ci.yml` — to your project root. **You do not need to tell it where the
+checks are:** it tries `ci/checks`, `ci/unity-ci/checks` and `checks` in turn. Set
+`UNITY_CI_CHECKS` only for an unusual layout.
+
+#### If you used a submodule, your CI must actually fetch it
+
+This is the step that bites. A submodule directory is empty in CI unless you ask for it, and the
+pipeline then fails with "could not find the unity-ci checks".
+
+**GitLab** — add to the job (or to a top-level `variables:` block):
+
+```yaml
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+```
+
+**GitHub Actions** — on every `actions/checkout` step that needs the checks:
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+```
+
+Neither is needed if you copied `checks/` instead.
 
 ### Run locally
 
@@ -337,6 +368,19 @@ reaches a runner. A YAML parser cannot see that. actionlint can, offline, in a s
 
 There is no equivalent step for `.gitlab-ci.yml`, since `glab ci lint` needs an authenticated
 GitLab project and this repository lives on GitHub. Run it manually when changing that file.
+
+### The git-lfs warning on clone is expected
+
+Cloning or checking out this repository prints:
+
+```
+Encountered 1 file that should have been a pointer, but wasn't:
+        tests/fixtures/broken/blob.bin
+```
+
+That is git-lfs correctly noticing the deliberate violation in the broken fixture — the whole point
+of that file. Nothing is wrong, and consuming projects never see it, since they use a tag of this
+repository rather than its test data.
 
 ### How the fixtures stay out of the way
 
