@@ -1,0 +1,6 @@
+{
+    "name": "Game.Core.Tests",
+    "rootNamespace": "Game.Core.Tests",
+    "references": ["Game.Core"],
+    "noEngineReferences": true
+}

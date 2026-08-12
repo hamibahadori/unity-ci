@@ -258,6 +258,64 @@ are only as fresh as the last import, so it complements the Test Runner rather t
 
 ---
 
+## Developing unity-ci itself
+
+### The self-test
+
+```bash
+python tests/run_self_test.py
+```
+
+Two fixture projects under `tests/fixtures/` — one correct, one with a deliberate violation of
+every rule — and a runner asserting that each check **passes the clean one and fails the broken
+one**.
+
+The second half is the point. These are several hundred lines of regex against C#, and a tweak that
+quietly stops matching would otherwise go unnoticed until it let a real problem through. A check
+that can no longer fail is worse than no check, because it still reports green and looks like
+coverage.
+
+Each broken case also asserts on a substring of the output, so a check cannot satisfy the suite by
+failing for an unrelated reason — crashing on a missing folder is not the same as catching a
+violation. And each clean case asserts the check did **not** report zero files inspected, because
+the suite caught exactly that on its first run: the git-backed checks reported *"clean (0 tracked
+paths)"* and passed, having looked at nothing.
+
+The clean fixture deliberately contains the constructs that have broken the naming check before —
+operator overloads, auto-properties, expression-bodied members, `static readonly`, `const` — so a
+regression fails here rather than in someone's project.
+
+**Fixtures must be tracked or staged.** `git ls-files` only sees the index, so a newly written
+fixture is invisible to the git-backed checks. The runner refuses to proceed in that state rather
+than passing vacuously.
+
+**No broken case for LFS.** Faithfully simulating "committed without git-lfs installed" means
+bypassing the clean filter at `git add` time, which makes the fixture fragile and dependent on the
+contributor's own LFS setup. The clean case still proves the check runs and reports.
+
+### Workflow linting
+
+The `self-test` job runs [actionlint](https://github.com/rhysd/actionlint) over
+`.github/workflows/`. This exists because a broken workflow shipped from this repository once: a
+`hashFiles()` call in a job-level `if`, which is valid YAML and invalid to Actions — `jobs.<id>.if`
+allows only `always`, `cancelled`, `success` and `failure`, because it is evaluated before the job
+reaches a runner. A YAML parser cannot see that. actionlint can, offline, in a second.
+
+There is no equivalent step for `.gitlab-ci.yml`, since `glab ci lint` needs an authenticated
+GitLab project and this repository lives on GitHub. Run it manually when changing that file.
+
+### How the fixtures stay out of the way
+
+The fixtures are ordinary tracked files, not a temporary copy, which works because `git ls-files`
+and `git ls-tree` are relative to the working directory — pointing `UNITY_CI_PROJECT_ROOT` at a
+fixture makes the git-backed checks see only that fixture.
+
+The repository's own lint run does not see them either: it looks for source under `Assets/` at the
+root, which does not exist here. If that ever changes, `exclude` in `unity-ci.json` is the escape
+hatch.
+
+---
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
