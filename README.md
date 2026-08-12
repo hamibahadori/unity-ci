@@ -228,6 +228,29 @@ Copy `_typos.toml.example` to `_typos.toml` for the spell checker. A false posit
 adding the word to `[default.extend-words]`, **not** by weakening the check — otherwise the gate
 quietly rots back to advisory.
 
+### Run them on every commit
+
+The whole suite takes under two seconds, which is the argument for the hook: cheaper than the round
+trip to CI, and far cheaper than a reviewer finding it.
+
+```bash
+git config core.hooksPath ci/unity-ci/hooks
+```
+
+That points git at the whole directory, so the hook updates with the rest of unity-ci. If you
+already keep hooks of your own, copy the single file instead:
+
+```bash
+cp ci/unity-ci/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+`git commit --no-verify` bypasses it, which is reasonable for a work-in-progress commit on your own
+branch — CI is still the gate that matters. The hook also **skips rather than blocks** if it cannot
+find the checks or a working Python: a misconfigured hook should never stop you committing.
+
+`check_lfs.py` reads the **index**, so the hook catches a binary committed without LFS at the moment
+it happens rather than one commit too late.
+
 ### An `.editorconfig` is worth pairing with this
 
 Mirror the naming rules in `.editorconfig` so Rider and Visual Studio flag them as you type. Finding
@@ -289,9 +312,20 @@ regression fails here rather than in someone's project.
 fixture is invisible to the git-backed checks. The runner refuses to proceed in that state rather
 than passing vacuously.
 
-**No broken case for LFS.** Faithfully simulating "committed without git-lfs installed" means
-bypassing the clean filter at `git add` time, which makes the fixture fragile and dependent on the
-contributor's own LFS setup. The clean case still proves the check runs and reports.
+**The LFS fixture needs care if you ever re-add it.** `tests/fixtures/broken/.gitattributes` routes
+`*.bin` through LFS, and `blob.bin` is committed as a plain blob anyway — the exact mistake someone
+makes cloning and committing without `git lfs install`. Reproducing that deliberately means
+neutralising the LFS **process** filter, not just `clean`, which takes precedence:
+
+```bash
+git -c filter.lfs.process= -c filter.lfs.clean=cat add tests/fixtures/broken/blob.bin
+```
+
+Re-add it normally and git converts it to a pointer, the violation disappears, and that self-test
+case starts failing for a reason that is not obvious.
+
+This is also why the repository has its own `unity-ci.json` setting `exclude: ["tests/fixtures/"]`
+— without it, the repository's own lint would fail on its own test data.
 
 ### Workflow linting
 

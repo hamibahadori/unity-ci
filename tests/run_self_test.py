@@ -46,10 +46,16 @@ CASES = [
     ("check_unity_assets.py", "clean", 0, "clean", "(0 tracked paths)"),
     ("check_unity_assets.py", "broken", 1, "Ghost.cs.meta", None),
 
-    # LFS has no broken case. Faithfully simulating "committed without git-lfs installed" means
-    # bypassing the clean filter at `git add` time, which makes the fixture fragile and dependent
-    # on the contributor's own LFS setup. The clean case still proves the check runs and reports.
     ("check_lfs.py", "clean", 0, "clean", None),
+    # The broken fixture's own .gitattributes routes *.bin through LFS, and blob.bin is committed
+    # as a plain blob anyway — the exact mistake someone makes when they clone and commit without
+    # `git lfs install`. Reproducing it needs the LFS *process* filter neutralised at `git add`
+    # time (`clean` alone is not enough, `process` takes precedence):
+    #
+    #   git -c filter.lfs.process= -c filter.lfs.clean=cat add tests/fixtures/broken/blob.bin
+    #
+    # If this case ever starts failing after someone re-adds that file normally, that is why.
+    ("check_lfs.py", "broken", 1, "blob.bin", None),
 ]
 
 
