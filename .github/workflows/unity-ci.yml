@@ -80,7 +80,6 @@ jobs:
   # before you have one — and harmless in this repository, which has no Unity project of its own.
   core-tests:
     runs-on: ubuntu-latest
-    if: hashFiles('dotnet/**/*.Tests.csproj') != ''
     env:
       # Point this at your test project.
       TEST_PROJECT: dotnet/YourGame.Core.Tests/YourGame.Core.Tests.csproj
@@ -89,11 +88,27 @@ jobs:
         with:
           lfs: false
 
-      - uses: actions/setup-dotnet@v4
+      # The "is this configured yet?" test has to be a step, not a job-level `if`.
+      # jobs.<id>.if allows only always/cancelled/success/failure — no hashFiles, no env — because
+      # it is evaluated before the job reaches a runner, so there is no workspace to inspect.
+      - name: Look for an engine-free test project
+        id: detect
+        run: |
+          if [ -f "$TEST_PROJECT" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No test project at '$TEST_PROJECT' — skipping."
+            echo "Set TEST_PROJECT once you have one. See README.md."
+          fi
+
+      - if: steps.detect.outputs.found == 'true'
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
       - name: Cache NuGet
+        if: steps.detect.outputs.found == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -101,11 +116,12 @@ jobs:
           restore-keys: nuget-
 
       - name: Test
+        if: steps.detect.outputs.found == 'true'
         run: dotnet test "$TEST_PROJECT" --logger "trx;LogFileName=core-tests.trx"
 
       - name: Publish results
         # Runs even when tests fail — that is when the report matters most.
-        if: always()
+        if: always() && steps.detect.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: core-test-results
