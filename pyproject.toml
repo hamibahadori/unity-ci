@@ -1,5 +1,19 @@
+# The checks are standalone scripts, not an installable package — this file exists to declare the
+# Python version they need and to give editors something to anchor on.
+#
+# requires-python is 3.9 because that is genuinely all they use: pathlib, re, json, subprocess and
+# f-strings. Pinning it higher than necessary would rule out CI images that are otherwise fine.
+
 [project]
 name = "unity-ci"
 version = "0.1.0"
-requires-python = ">=3.13"
+description = "Fast, dependency-light CI checks for Unity projects, plus the pattern for a Unity-free rules engine."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+# Standard library only, on purpose: a check nobody can run without a pip install is a check nobody
+# runs locally.
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/hamibahadori/unity-ci"

@@ -19,8 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Where the checks live, relative to the repository root. Change if you vendored them elsewhere.
-  UNITY_CI_CHECKS: ci/checks
+  # Where the checks live, relative to the repository root. Leave blank to auto-detect the usual
+  # layouts: copied to ci/checks, added as a submodule at ci/unity-ci/checks, or this repository
+  # itself. Set it only if you put them somewhere unusual.
+  UNITY_CI_CHECKS: ""
 
 jobs:
   lint:
@@ -52,8 +54,23 @@ jobs:
             "https://github.com/crate-ci/typos/releases/download/v${TYPOS_VERSION}/typos-v${TYPOS_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
             | tar -xz ./typos
 
+      - name: Locate the checks
+        id: checks
+        run: |
+          for candidate in "$UNITY_CI_CHECKS" ci/checks ci/unity-ci/checks checks; do
+            if [ -n "$candidate" ] && [ -f "$candidate/check_naming.py" ]; then
+              echo "dir=$candidate" >> "$GITHUB_OUTPUT"
+              echo "Using checks in '$candidate'"
+              exit 0
+            fi
+          done
+          echo "Could not find the unity-ci checks. Set UNITY_CI_CHECKS to their directory." >&2
+          exit 1
+
       # One step, so every check reports before the job fails and one push surfaces every problem.
       - name: Run checks
+        env:
+          CHECKS: ${{ steps.checks.outputs.dir }}
         run: |
           overall_status=0
 
@@ -67,10 +84,10 @@ jobs:
             fi
           }
 
-          run_check "core purity"         python "$UNITY_CI_CHECKS/check_core_purity.py"
-          run_check "naming conventions"  python "$UNITY_CI_CHECKS/check_naming.py"
-          run_check "unity asset hygiene" python "$UNITY_CI_CHECKS/check_unity_assets.py"
-          run_check "lfs hygiene"         python "$UNITY_CI_CHECKS/check_lfs.py"
+          run_check "core purity"         python "$CHECKS/check_core_purity.py"
+          run_check "naming conventions"  python "$CHECKS/check_naming.py"
+          run_check "unity asset hygiene" python "$CHECKS/check_unity_assets.py"
+          run_check "lfs hygiene"         python "$CHECKS/check_lfs.py"
           run_check "typos"               ./typos
 
           echo ""
@@ -80,7 +97,6 @@ jobs:
   # before you have one — and harmless in this repository, which has no Unity project of its own.
   core-tests:
     runs-on: ubuntu-latest
-    if: hashFiles('dotnet/**/*.Tests.csproj') != ''
     env:
       # Point this at your test project.
       TEST_PROJECT: dotnet/YourGame.Core.Tests/YourGame.Core.Tests.csproj
@@ -89,11 +105,27 @@ jobs:
         with:
           lfs: false
 
-      - uses: actions/setup-dotnet@v4
+      # The "is this configured yet?" test has to be a step, not a job-level `if`.
+      # jobs.<id>.if allows only always/cancelled/success/failure — no hashFiles, no env — because
+      # it is evaluated before the job reaches a runner, so there is no workspace to inspect.
+      - name: Look for an engine-free test project
+        id: detect
+        run: |
+          if [ -f "$TEST_PROJECT" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No test project at '$TEST_PROJECT' — skipping."
+            echo "Set TEST_PROJECT once you have one. See README.md."
+          fi
+
+      - if: steps.detect.outputs.found == 'true'
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
       - name: Cache NuGet
+        if: steps.detect.outputs.found == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -101,11 +133,12 @@ jobs:
           restore-keys: nuget-
 
       - name: Test
+        if: steps.detect.outputs.found == 'true'
         run: dotnet test "$TEST_PROJECT" --logger "trx;LogFileName=core-tests.trx"
 
       - name: Publish results
         # Runs even when tests fail — that is when the report matters most.
-        if: always()
+        if: always() && steps.detect.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: core-test-results
