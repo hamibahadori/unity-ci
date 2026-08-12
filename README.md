@@ -343,20 +343,17 @@ regression fails here rather than in someone's project.
 fixture is invisible to the git-backed checks. The runner refuses to proceed in that state rather
 than passing vacuously.
 
-**The LFS fixture needs care if you ever re-add it.** `tests/fixtures/broken/.gitattributes` routes
-`*.bin` through LFS, and `blob.bin` is committed as a plain blob anyway — the exact mistake someone
-makes cloning and committing without `git lfs install`. Reproducing that deliberately means
-neutralising the LFS **process** filter, not just `clean`, which takes precedence:
+**No broken case for LFS, deliberately.** A realistic violation means a file that `.gitattributes`
+routes through LFS but which git stores as a plain blob, and creating one requires neutralising the
+LFS *process* filter at `git add` time.
 
-```bash
-git -c filter.lfs.process= -c filter.lfs.clean=cat add tests/fixtures/broken/blob.bin
-```
+That fixture existed briefly and was removed, because it made **`git status` permanently dirty for
+everyone**: git compares the working tree *through* the clean filter, which turns the file back
+into a pointer, so it never matches the raw blob in the index. A repository whose status is never
+clean is one where real changes are easy to miss — a worse problem than the one the fixture solved.
 
-Re-add it normally and git converts it to a pointer, the violation disappears, and that self-test
-case starts failing for a reason that is not obvious.
-
-This is also why the repository has its own `unity-ci.json` setting `exclude: ["tests/fixtures/"]`
-— without it, the repository's own lint would fail on its own test data.
+The clean case still proves the check runs, reports and does not crash, and the behaviour it guards
+is exercised for real every time someone commits a binary.
 
 ### Workflow linting
 
@@ -369,19 +366,6 @@ reaches a runner. A YAML parser cannot see that. actionlint can, offline, in a s
 There is no equivalent step for `.gitlab-ci.yml`, since `glab ci lint` needs an authenticated
 GitLab project and this repository lives on GitHub. Run it manually when changing that file.
 
-### The git-lfs warning on clone is expected
-
-Cloning or checking out this repository prints:
-
-```
-Encountered 1 file that should have been a pointer, but wasn't:
-        tests/fixtures/broken/blob.bin
-```
-
-That is git-lfs correctly noticing the deliberate violation in the broken fixture — the whole point
-of that file. Nothing is wrong, and consuming projects never see it, since they use a tag of this
-repository rather than its test data.
-
 ### How the fixtures stay out of the way
 
 The fixtures are ordinary tracked files, not a temporary copy, which works because `git ls-files`
@@ -389,8 +373,8 @@ and `git ls-tree` are relative to the working directory — pointing `UNITY_CI_P
 fixture makes the git-backed checks see only that fixture.
 
 The repository's own lint run does not see them either: it looks for source under `Assets/` at the
-root, which does not exist here. If that ever changes, `exclude` in `unity-ci.json` is the escape
-hatch.
+root, which does not exist here. That is why unity-ci needs no `unity-ci.json` of its own — if a
+future fixture ever did leak into its own lint, `exclude` is the escape hatch.
 
 ---
 

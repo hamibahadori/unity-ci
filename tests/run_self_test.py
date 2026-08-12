@@ -46,16 +46,18 @@ CASES = [
     ("check_unity_assets.py", "clean", 0, "clean", "(0 tracked paths)"),
     ("check_unity_assets.py", "broken", 1, "Ghost.cs.meta", None),
 
+    # LFS is the one check with no broken case, deliberately.
+    #
+    # A realistic violation means a file that .gitattributes routes through LFS but which git
+    # stores as a plain blob — and creating one requires neutralising the LFS *process* filter at
+    # `git add` time. That fixture existed briefly and was removed, because it made `git status`
+    # permanently dirty for everyone: git compares the working tree *through* the clean filter,
+    # which turns the file back into a pointer, so it never matches the raw blob in the index. A
+    # repository whose status is never clean is one where real changes are easy to miss.
+    #
+    # The clean case still proves the check runs, reports, and does not crash. The behaviour it
+    # guards is exercised for real every time someone commits a binary.
     ("check_lfs.py", "clean", 0, "clean", None),
-    # The broken fixture's own .gitattributes routes *.bin through LFS, and blob.bin is committed
-    # as a plain blob anyway — the exact mistake someone makes when they clone and commit without
-    # `git lfs install`. Reproducing it needs the LFS *process* filter neutralised at `git add`
-    # time (`clean` alone is not enough, `process` takes precedence):
-    #
-    #   git -c filter.lfs.process= -c filter.lfs.clean=cat add tests/fixtures/broken/blob.bin
-    #
-    # If this case ever starts failing after someone re-adds that file normally, that is why.
-    ("check_lfs.py", "broken", 1, "blob.bin", None),
 ]
 
 
