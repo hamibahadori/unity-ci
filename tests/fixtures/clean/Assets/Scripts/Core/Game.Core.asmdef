@@ -1,0 +1,6 @@
+{
+    "name": "Game.Core",
+    "rootNamespace": "Game.Core",
+    "references": [],
+    "noEngineReferences": true
+}

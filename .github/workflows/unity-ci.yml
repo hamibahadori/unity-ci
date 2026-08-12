@@ -91,7 +91,47 @@ jobs:
           run_check "typos"               ./typos
 
           echo ""
-          exit $overall_status
+          exit "$overall_status"
+
+  # unity-ci validating itself. Skips in a consuming project, which has no tests/ directory of
+  # ours — the checks are the deliverable there, not the thing under test.
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Look for the self-test
+        id: detect
+        run: |
+          if [ -f tests/run_self_test.py ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No tests/run_self_test.py — this is a consuming project, nothing to self-test."
+          fi
+
+      - if: steps.detect.outputs.found == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Proves each check passes a clean fixture AND fails a broken one. The second half is the
+      # point: a check that can no longer fail still reports green and looks like coverage.
+      - name: Fixture self-test
+        if: steps.detect.outputs.found == 'true'
+        run: python tests/run_self_test.py
+
+      # Catches the class of bug that shipped a broken workflow here: `hashFiles` used in a
+      # job-level `if`, which is valid YAML and invalid to Actions. A YAML parser cannot see it.
+      - name: Install actionlint
+        if: steps.detect.outputs.found == 'true'
+        run: bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+
+      - name: Lint the workflows
+        if: steps.detect.outputs.found == 'true'
+        run: ./actionlint -color
 
   # Skips itself until an engine-free test project exists, so this file is harmless to copy in
   # before you have one — and harmless in this repository, which has no Unity project of its own.

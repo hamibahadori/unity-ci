@@ -6,9 +6,13 @@ Git stores the whole binary in history instead of a pointer. Nothing warns you, 
 grows permanently, and rewriting history is the only cure — so it has to be caught at review time,
 before it is in main.
 
-This inspects what git has *stored* (`git lfs ls-files` and `git ls-tree`), not the working tree,
-so it gives the same answer whether or not LFS content has been smudged in. That matters: a check
-that behaves differently on a developer machine than in CI is one nobody trusts or runs locally.
+This inspects what git has *stored in the index*, not the working tree, so it gives the same answer
+whether or not LFS content has been smudged in. That matters: a check that behaves differently on a
+developer machine than in CI is one nobody trusts or runs locally.
+
+The index rather than HEAD, specifically, so the pre-commit hook catches the mistake at the moment
+it is made rather than one commit too late. After a CI checkout the index matches HEAD, so the
+result there is identical.
 
 Usage:  python checks/check_lfs.py
 Exit:   0 clean, 1 violations found. Oversized non-LFS files are warnings only — the right fix is
@@ -22,26 +26,31 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from unity_ci import is_excluded, load_config, project_root
 
-COMMIT = "HEAD"
-
-
 def run_git(root, arguments, **kwargs):
     return subprocess.run(["git"] + arguments, cwd=root, check=True,
                           capture_output=True, text=True, **kwargs)
 
 
 def stored_blob_sizes(root):
-    """Path -> the size git actually stores. An LFS pointer is ~130 bytes."""
-    result = run_git(root, ["ls-tree", "-r", "-l", "-z", COMMIT])
-    sizes = {}
-    for entry in result.stdout.split("\0"):
+    """Path -> the size git has stored for it in the index. An LFS pointer is ~130 bytes."""
+    listing = run_git(root, ["ls-files", "-s", "-z"])
+    entries = []
+    for entry in listing.stdout.split("\0"):
         if not entry:
             continue
+        # "<mode> <object> <stage>\t<path>"
         metadata, _, path = entry.partition("\t")
         fields = metadata.split()
-        if len(fields) >= 4 and fields[1] == "blob" and fields[3] != "-":
-            sizes[path] = int(fields[3])
-    return sizes
+        if len(fields) >= 2:
+            entries.append((fields[1], path))
+
+    if not entries:
+        return {}
+
+    query = "\n".join(object_id for object_id, _path in entries) + "\n"
+    measured = run_git(root, ["cat-file", "--batch-check=%(objectsize)"], input=query)
+    sizes = measured.stdout.split()
+    return {path: int(size) for (_object_id, path), size in zip(entries, sizes)}
 
 
 def paths_matching_lfs_attribute(root, paths):

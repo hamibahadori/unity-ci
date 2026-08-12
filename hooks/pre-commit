@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# unity-ci pre-commit hook — run the checks before the commit, not after the push.
+#
+# The whole suite takes under two seconds, which is the entire argument for it: the feedback is
+# cheaper than the round trip to CI, and cheaper still than a reviewer finding it.
+#
+# Install (from your project root), either:
+#
+#     git config core.hooksPath ci/unity-ci/hooks     # whole hooks directory, survives updates
+#
+# or, if you already keep hooks of your own:
+#
+#     cp ci/unity-ci/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+# Bypass a single commit with `git commit --no-verify` — for a work-in-progress commit on your own
+# branch, that is a reasonable thing to do. CI is still the gate that matters.
+
+set -u
+
+# Git runs hooks from the repository root.
+CHECKS=""
+for candidate in "${UNITY_CI_CHECKS:-}" ci/checks ci/unity-ci/checks checks; do
+    if [ -n "$candidate" ] && [ -f "$candidate/check_naming.py" ]; then
+        CHECKS="$candidate"
+        break
+    fi
+done
+
+if [ -z "$CHECKS" ]; then
+    echo "unity-ci: could not find the checks; set UNITY_CI_CHECKS. Skipping." >&2
+    exit 0   # never block a commit just because the hook is misconfigured
+fi
+
+# Verify the interpreter actually runs, rather than trusting `command -v`. On Windows, `python`
+# often resolves to the Microsoft Store App Execution Alias — a stub that exists on PATH, prints an
+# advert and exits non-zero. Taking it at face value made this hook block every commit with four
+# copies of "Python was not found", which looks exactly like a real failure.
+PYTHON=""
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "" >/dev/null 2>&1; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
+if [ -z "$PYTHON" ]; then
+    echo "unity-ci: no working python on PATH. Skipping." >&2
+    exit 0
+fi
+
+status=0
+
+run_check() {
+    label="$1"
+    shift
+    if ! output=$("$@" 2>&1); then
+        echo ""
+        echo "--- $label ---"
+        echo "$output"
+        status=1
+    fi
+}
+
+run_check "core purity"         "$PYTHON" "$CHECKS/check_core_purity.py"
+run_check "naming conventions"  "$PYTHON" "$CHECKS/check_naming.py"
+run_check "unity asset hygiene" "$PYTHON" "$CHECKS/check_unity_assets.py"
+run_check "lfs hygiene"         "$PYTHON" "$CHECKS/check_lfs.py"
+
+# Optional: only if you have it installed. CI runs it regardless.
+if command -v typos >/dev/null 2>&1; then
+    run_check "typos" typos
+fi
+
+if [ "$status" -ne 0 ]; then
+    echo ""
+    echo "unity-ci: commit blocked. Fix the above, or use 'git commit --no-verify' to bypass."
+fi
+
+exit "$status"

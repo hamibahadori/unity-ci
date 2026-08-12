@@ -1,0 +1,5 @@
+{
+    "name": "Game.Presentation",
+    "rootNamespace": "Game.Presentation",
+    "references": ["Game.Core"]
+}

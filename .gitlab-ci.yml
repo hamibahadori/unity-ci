@@ -89,7 +89,7 @@ lint:
       run_check "typos"               ./typos
 
       echo ""
-      exit $overall_status
+      exit "$overall_status"
 
 # ---------------------------------------------------------------------------------------------
 # Test — the engine-free assemblies, on a stock .NET image.
