@@ -1,3 +1,0 @@
-# Routes *.bin through LFS. blob.bin is deliberately committed as a plain blob anyway,
-# which is exactly the mistake check_lfs.py exists to catch.
-*.bin filter=lfs diff=lfs merge=lfs -text
