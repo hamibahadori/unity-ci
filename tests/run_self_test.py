@@ -43,6 +43,10 @@ CASES = [
     ("check_naming.py", "broken", 1, "rootNamespace", None),
     ("check_naming.py", "broken", 1, "is null", None),
     ("check_naming.py", "broken", 1, "WrongName.cs", None),
+    # A Type.Part.cs file is accepted only for a part of a partial type - the clean fixture's
+    # BoardView.Gizmos.cs. These two make sure that allowance stays exactly that narrow.
+    ("check_naming.py", "broken", 1, "'Ledger' is not declared partial", None),
+    ("check_naming.py", "broken", 1, "Stranger.Extras.cs", None),
 
     ("check_unity_assets.py", "clean", 0, "clean", "(0 tracked paths)"),
     ("check_unity_assets.py", "broken", 1, "Ghost.cs.meta", None),

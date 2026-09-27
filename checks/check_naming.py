@@ -15,7 +15,8 @@ Rules enforced:
   - constants and static readonly      PascalCase
   - locals and parameters              camelCase, and never a single letter
   - namespace matches the owning assembly's rootNamespace
-  - file name matches one of the types it declares
+  - file name matches one of the types it declares, or is `<Type>.<Part>.cs` for a part of a
+    `partial` type
   - no Unity `m_` prefix
   - `== null`, never `is null`  (Unity's fake-null only works with the overloaded operator)
 
@@ -50,7 +51,8 @@ FIELD_DECLARATION = re.compile(
 )
 
 TYPE_DECLARATION = re.compile(
-    r"^\s*(?:public|internal|private)?\s*(?:static\s+|abstract\s+|sealed\s+|partial\s+|readonly\s+)*"
+    r"^\s*(?:public|internal|private)?\s*"
+    r"(?P<modifiers>(?:(?:static|abstract|sealed|partial|readonly)\s+)*)"
     r"(?:class|struct|enum|interface|record)\s+(?P<name>\w+)"
 )
 
@@ -181,6 +183,7 @@ def check_file(path, relative, expected_namespace, is_test_assembly, violations)
         violations.append(f"{relative}:{line_number}: {message}")
 
     declared_types = []
+    partial_types = set()
     declared_namespace = None
 
     for line_number, line in enumerate(code.splitlines(), start=1):
@@ -197,6 +200,8 @@ def check_file(path, relative, expected_namespace, is_test_assembly, violations)
         if type_match:
             name = type_match.group("name")
             declared_types.append(name)
+            if "partial" in type_match.group("modifiers").split():
+                partial_types.add(name)
             if not PASCAL_CASE.match(name):
                 report(line_number, f"type '{name}' must be PascalCase")
             continue
@@ -236,10 +241,35 @@ def check_file(path, relative, expected_namespace, is_test_assembly, violations)
                 f"rootNamespace '{expected_namespace}'"
             )
 
-    if declared_types and path.stem not in declared_types:
-        violations.append(
-            f"{relative}: file name does not match any type it declares ({', '.join(declared_types)})"
-        )
+    if declared_types:
+        check_file_name(path.stem, relative, declared_types, partial_types, violations)
+
+
+def check_file_name(stem, relative, declared_types, partial_types, violations):
+    """A file is named after a type it declares — or, for a type split across files with `partial`,
+    after that type and a part: `BoardView.Gizmos.cs` holding part of `partial class BoardView`.
+
+    The part form is accepted only when the type named before the first dot is declared `partial` in
+    that same file. Anything looser — accepting any dotted name once a file holds some partial type,
+    say — would let a misnamed file through on the strength of an unrelated declaration.
+    """
+    if stem in declared_types:
+        return
+
+    if "." in stem:
+        owner = stem.split(".", 1)[0]
+        if owner in partial_types:
+            return
+        if owner in declared_types:
+            violations.append(
+                f"{relative}: named as a part of '{owner}' ('{owner}.<Part>.cs'), but '{owner}' is "
+                f"not declared partial; a type in one file is named after that type alone"
+            )
+            return
+
+    violations.append(
+        f"{relative}: file name does not match any type it declares ({', '.join(declared_types)})"
+    )
 
 
 def main() -> int:

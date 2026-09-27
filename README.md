@@ -66,6 +66,13 @@ Also checks that a file's namespace matches its assembly's **`rootNamespace` rea
 the project rather than a hardcoded table is what makes this work on any project unmodified — and
 it cannot drift from what Unity itself believes.
 
+A type split across files with `partial` may put its other parts in **`<Type>.<Part>.cs`** —
+`BoardView.Gizmos.cs` for editor-only drawing, say, or a debug-only part kept out of the main file.
+That name is accepted only when the file declares `<Type>` as `partial`; a dotted name on a type
+that is not partial, or one naming a different type from the one declared, is still reported. Keep
+the part holding a `MonoBehaviour`'s or `ScriptableObject`'s main declaration in `<Type>.cs`: Unity
+finds those scripts by file name.
+
 Regex-based, deliberately. Unity projects normally gitignore their generated `.csproj` files, so a
 Roslyn analyser would need the editor to produce them first. A regex decides these particular rules
 reliably and keeps the check instant and dependency-free.
