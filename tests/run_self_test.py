@@ -42,6 +42,7 @@ CASES = [
     ("check_naming.py", "broken", 1, "badMethod", None),
     ("check_naming.py", "broken", 1, "rootNamespace", None),
     ("check_naming.py", "broken", 1, "is null", None),
+    ("check_naming.py", "broken", 1, "WrongName.cs", None),
 
     ("check_unity_assets.py", "clean", 0, "clean", "(0 tracked paths)"),
     ("check_unity_assets.py", "broken", 1, "Ghost.cs.meta", None),
